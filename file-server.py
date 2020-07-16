@@ -53,24 +53,27 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
         content = ""
         self.send_response(200)
-        self.send_header("content-type","application/json")
         if os.path.isfile(fn):
+            self.send_header("content-type",'application/octet-stream')
             f = open(fn, "rb")
             content = f.read()
             f.close()
-            contenttype,_ = mimetypes.guess_type(fn)
-            if contenttype:
-                self.send_header("content-type",contenttype)
         elif os.path.isdir(fn):
+            self.send_header("content-type","text/html")
             filelist = []
+            filelist.append('<h1>Directory listing for '+path+'</h1>')
+            filelist.append('<hr>')
+            filelist.append('<ul>')
             for filename in os.listdir(fn):
                 if filename[0] != ".":
                     filepath = "%s%s%s" % (fn, os.sep, filename)
                     if os.path.isdir(filepath):
                         filename += os.sep
                     mtime = os.path.getmtime(filepath)
-                    filelist.append({"filename":filename,"mtime":mtime})
-            content = json.dumps(filelist)
+                    filelist.append('<li><a href="{}">{}</a></li>'.format(filename,filename))
+            filelist.append('</ul>')
+            filelist.append('<hr>')
+            content = '\n'.join(filelist)
         else:
             print(g_filepath, path, fn)
             content = "<h1>404<h1>"
