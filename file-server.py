@@ -13,6 +13,7 @@ import BaseHTTPServer
 import SocketServer
 import mimetypes
 import json
+import cgi
 
 reload(sys)
 sys.setdefaultencoding("utf-8")
@@ -93,25 +94,10 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
         resultdict = {"result":0, "msg":"OK"}
         if path=="/upload":
-            if queryParams.has_key("name"):
-                filesize = int(self.headers["content-length"])
-                filecontent = self.rfile.read(filesize)
-                fn = queryParams["name"]
-                resultdict["filename"] = fn
-                fn = "%s%s" % (g_filepath, fn)
-                dirname = os.path.dirname(fn)
-                if not os.path.exists(dirname):
-                    os.makedirs(dirname)
-                if os.path.isdir(fn):
-                    resultdict.result = 1
-                    resultdict.msg = "File name is directory."
-                else:
-                    f = open(fn,"wb")
-                    f.write(filecontent)
-                    f.close()
-            else:
-                resultdict.result = 2
-                resultdict.msg = "Need file name."
+            r, info = self.deal_post_data(queryParams)
+            if not r:
+                resultdict.result = 1
+                resultdict.msg = info
         else:
             resultdict.result = 3
             resultdict.msg = "No this API."
@@ -121,6 +107,31 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         self.send_header("content-type","application/json")
         self.end_headers()
         self.wfile.write(content)
+
+    def deal_post_data(self,queryParams):
+        dirname = queryParams.get("dirname")
+        if dirname is None:
+            dirname = ''
+        dirname = "%s%s" % (g_filepath, dirname)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
+
+        ctype, pdict = cgi.parse_header(self.headers['Content-Type'])
+        if ctype != 'multipart/form-data':
+            return (False, "request is not a multipart/form-data.")
+
+        form = cgi.FieldStorage( fp=self.rfile, headers=self.headers, environ={'REQUEST_METHOD':'POST', 'CONTENT_TYPE':self.headers['Content-Type'], })
+        try:
+            if isinstance(form["file"], list):
+                for record in form["file"]:
+                    filepath = "%s%s"%(dirname, record.filename)
+                    open(filepath, "wb").write(record.file.read())
+            else:
+                filepath = "%s%s"%(dirname, form["file"].filename)
+                open(filepath, "wb").write(form["file"].file.read())
+            return (True, "Files uploaded")
+        except IOError:
+                return (False, "Can't create file to write, do you have permission to write? %s"%filepath)
 
 class ThreadingHTTPServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
     pass
