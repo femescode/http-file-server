@@ -63,7 +63,7 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             content = f.read()
             f.close()
         elif os.path.isdir(fn):
-            self.send_header("content-type","text/html")
+            self.send_header("content-type","text/html; charset=UTF-8")
             filelist = []
             filelist.append('<h1>Directory listing for '+path+'</h1>')
             filelist.append('<ol>')
