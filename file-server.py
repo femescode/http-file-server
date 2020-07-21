@@ -14,11 +14,14 @@ import SocketServer
 import mimetypes
 import json
 import cgi
+import socket
 
 reload(sys)
 sys.setdefaultencoding("utf-8")
 mimetypes.init()
 
+localip = ""
+port = 8000
 g_filepath = ""
 
 def transDicts(params):
@@ -63,6 +66,10 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             self.send_header("content-type","text/html")
             filelist = []
             filelist.append('<h1>Directory listing for '+path+'</h1>')
+            filelist.append('<ol>')
+            filelist.append('<li>下载命令：<code>curl -LO http://%s:%s/test/test.txt</code></li>'%(localip,port))
+            filelist.append('<li>上传命令：<code>curl http://%s:%s/upload?dirname=test/ -F "file=@./test.txt"</code></li>'%(localip,port))
+            filelist.append('</ol>')
             filelist.append('<hr>')
             filelist.append('<ul>')
             for filename in os.listdir(fn):
@@ -137,10 +144,20 @@ class ThreadingHTTPServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer
     pass
 
 def run(port):
-    print "HTTP File Server Started at port:", port
+    print("HTTP File Server Started at : http://%s:%s/" % (localip,port))
     server_address = ("", port)
     httpd = ThreadingHTTPServer(("", port), HTTPRequestHandler)
     httpd.serve_forever()
+
+def get_host_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+    finally:
+        s.close()
+
+    return ip
 
 if __name__=="__main__":
     g_filepath = "./files/"
@@ -150,6 +167,7 @@ if __name__=="__main__":
         g_filepath += os.sep
     g_filepath = g_filepath.replace("/",os.sep)
 
+    localip = get_host_ip()
     port = 8000
     if len(sys.argv)==3:
         port = int(sys.argv[2])
