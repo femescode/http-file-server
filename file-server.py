@@ -79,7 +79,7 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                     content = json.dumps({"result":1, "msg":"删除失败，目录中存在文件，无法删除！"})
             else:
                 content = json.dumps({"result":2, "msg":"删除失败，未找到该文件！"})
-            self.send_header("content-type","application/json")
+            self.send_header("content-type","application/json; charset=UTF-8")
         # 列出文件处理
         elif os.path.isdir(fn):
             self.send_header("content-type","text/html; charset=UTF-8")
@@ -140,7 +140,7 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             content = '\n'.join(html_sb)
         else:
             content = "<h1>404<h1>"
-            self.send_header("content-type","text/html")
+            self.send_header("content-type","text/html; charset=UTF-8")
 
         self.end_headers()
         self.wfile.write(content)
@@ -166,7 +166,7 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
         content = json.dumps(resultdict)
         self.send_response(200)
-        self.send_header("content-type","application/json")
+        self.send_header("content-type","application/json; charset=UTF-8")
         self.end_headers()
         self.wfile.write(content)
 
