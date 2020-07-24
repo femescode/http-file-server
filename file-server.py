@@ -57,33 +57,88 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
         content = ""
         self.send_response(200)
+        # 下载文件处理
         if os.path.isfile(fn):
+            filesize = os.path.getsize(fn)
             self.send_header("content-type",'application/octet-stream')
+            self.send_header("content-length",filesize)
             f = open(fn, "rb")
             content = f.read()
             f.close()
+        # 删除文件处理
+        elif path.endswith('/delete'):
+            fn = fn[0:len(fn)-len('/delete')]
+            if os.path.isfile(fn):
+                os.remove(fn)
+                content = json.dumps({"result":0, "msg":"删除成功！"})
+            elif os.path.isdir(fn):
+                if len(os.listdir(fn)) == 0:
+                    os.rmdir(fn)
+                    content = json.dumps({"result":0, "msg":"删除成功！"})
+                else:
+                    content = json.dumps({"result":1, "msg":"删除失败，目录中存在文件，无法删除！"})
+            else:
+                content = json.dumps({"result":2, "msg":"删除失败，未找到该文件！"})
+            self.send_header("content-type","application/json")
+        # 列出文件处理
         elif os.path.isdir(fn):
             self.send_header("content-type","text/html; charset=UTF-8")
-            filelist = []
-            filelist.append('<h1>Directory listing for '+path+'</h1>')
-            filelist.append('<ol>')
-            filelist.append('<li>下载命令：<code>curl -LO http://%s:%s/test/test.txt</code></li>'%(localip,port))
-            filelist.append('<li>上传命令：<code>curl http://%s:%s/upload?dirname=test/ -F "file=@./test.txt"</code></li>'%(localip,port))
-            filelist.append('</ol>')
-            filelist.append('<hr>')
-            filelist.append('<ul>')
+            html_sb = []
+            html_sb.append(
+                '''<style>
+                    .delete{
+                        color: red;
+                        text-decoration: none;
+                        padding-right: 10px;
+                    }
+                </style>''')
+            html_sb.append(
+                '''<script>
+                    function deleteFunc(url){
+                        var r=confirm("确定删除吗?");
+                        if (r){
+                            var xmlhttp=new XMLHttpRequest();
+                            xmlhttp.onreadystatechange=function(){
+                                if (xmlhttp.readyState==4 && xmlhttp.status==200){
+                                    var res=JSON.parse(xmlhttp.responseText);
+                                    if(res.result == 0){
+                                        location.reload();
+                                    }else{
+                                        alert(res.msg);
+                                    }
+                                }
+                            }
+                            xmlhttp.open("GET",url,true);
+                            xmlhttp.send();
+                        }
+                    }
+                </script>''')
+            html_sb.append('<h1>Directory listing for '+path+'</h1>')
+            html_sb.append('<ol>')
+            dirname = re.sub(r'^/|/$', '', path)
+            if dirname == '':
+                html_sb.append('<li>下载命令：<code>curl -LO http://%s:%s/test.txt</code></li>'%(localip,port))
+                html_sb.append('<li>上传命令：<code>curl http://%s:%s/upload -F file=@./test.txt</code></li>'%(localip,port))
+            else:
+                html_sb.append('<li>下载命令：<code>curl -LO http://%s:%s/%s/test.txt</code></li>'%(localip,port,dirname))
+                html_sb.append('<li>上传命令：<code>curl http://%s:%s/upload?dirname=%s/ -F file=@./test.txt</code></li>'%(localip,port,dirname))
+            html_sb.append('</ol>')
+            html_sb.append('<hr>')
+            html_sb.append('<ul>')
             for filename in os.listdir(fn):
                 if filename[0] != ".":
                     filepath = "%s%s%s" % (fn, os.sep, filename)
                     if os.path.isdir(filepath):
+                        deletehtml='<a href="javascript:deleteFunc(\'{}/delete\')" class="delete">×</a>'.format(filename)
                         filename += os.sep
+                    else:
+                        deletehtml='<a href="javascript:deleteFunc(\'{}/delete\')" class="delete">×</a>'.format(filename)
                     mtime = os.path.getmtime(filepath)
-                    filelist.append('<li><a href="{}">{}</a></li>'.format(filename,filename))
-            filelist.append('</ul>')
-            filelist.append('<hr>')
-            content = '\n'.join(filelist)
+                    html_sb.append('<li>{}<a href="{}">{}</a></li>'.format(deletehtml,filename,filename))
+            html_sb.append('</ul>')
+            html_sb.append('<hr>')
+            content = '\n'.join(html_sb)
         else:
-            print(g_filepath, path, fn)
             content = "<h1>404<h1>"
             self.send_header("content-type","text/html")
 
@@ -106,7 +161,7 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 resultdict.result = 1
                 resultdict.msg = info
         else:
-            resultdict.result = 3
+            resultdict.result = 2
             resultdict.msg = "No this API."
 
         content = json.dumps(resultdict)
@@ -119,8 +174,11 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         dirname = queryParams.get("dirname")
         if dirname is None:
             dirname = ''
+        dirname = dirname.strip()
+        dirname = re.sub(r'(?!/)$', '/', dirname)
+        dirname = re.sub(r'^/', '', dirname)
         dirname = "%s%s" % (g_filepath, dirname)
-        if not os.path.exists(dirname):
+        if dirname != '' and not os.path.exists(dirname):
             os.makedirs(dirname)
 
         ctype, pdict = cgi.parse_header(self.headers['Content-Type'])
