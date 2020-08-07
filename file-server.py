@@ -39,7 +39,7 @@ def transDicts(params):
 
 class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def end_headers (self):
-        self.send_header("access-control-allow-origin", "*")
+        self.send_header("Access-Control-Allow-Origin", "*")
         BaseHTTPServer.BaseHTTPRequestHandler.end_headers(self)
 
     def do_GET(self):
@@ -60,8 +60,8 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         # 下载文件处理
         if os.path.isfile(fn):
             filesize = os.path.getsize(fn)
-            self.send_header("content-type",'application/octet-stream')
-            self.send_header("content-length",filesize)
+            self.send_header("Content-Type",'application/octet-stream')
+            self.send_header("Content-Length",filesize)
             f = open(fn, "rb")
             content = f.read()
             f.close()
@@ -79,10 +79,10 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                     content = json.dumps({"result":1, "msg":"删除失败，目录中存在文件，无法删除！"})
             else:
                 content = json.dumps({"result":2, "msg":"删除失败，未找到该文件！"})
-            self.send_header("content-type","application/json; charset=UTF-8")
+            self.send_header("Content-Type","application/json; charset=UTF-8")
+            self.send_header("Content-Length", len(content.encode('UTF-8')))
         # 列出文件处理
         elif os.path.isdir(fn):
-            self.send_header("content-type","text/html; charset=UTF-8")
             html_sb = []
             html_sb.append(
                 '''<style>
@@ -138,9 +138,12 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             html_sb.append('</ul>')
             html_sb.append('<hr>')
             content = '\n'.join(html_sb)
+            self.send_header("Content-Type","text/html; charset=UTF-8")
+            self.send_header("Content-Length", len(content.encode('UTF-8')))
         else:
             content = "<h1>404<h1>"
-            self.send_header("content-type","text/html; charset=UTF-8")
+            self.send_header("Content-Type","text/html; charset=UTF-8")
+            self.send_header("Content-Length", len(content.encode('UTF-8')))
 
         self.end_headers()
         self.wfile.write(content)
@@ -166,7 +169,8 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
         content = json.dumps(resultdict)
         self.send_response(200)
-        self.send_header("content-type","application/json; charset=UTF-8")
+        self.send_header("Content-Type","application/json; charset=UTF-8")
+        self.send_header("Content-Length", len(content.encode('UTF-8')))
         self.end_headers()
         self.wfile.write(content)
 
