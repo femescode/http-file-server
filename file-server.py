@@ -118,10 +118,10 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             dirname = re.sub(r'^/|/$', '', path)
             if dirname == '':
                 html_sb.append('<li>下载命令：<code>curl -LO http://%s:%s/test.txt</code></li>'%(localip,port))
-                html_sb.append('<li>上传命令：<code>curl http://%s:%s/upload -F file=@./test.txt</code></li>'%(localip,port))
+                html_sb.append('<li>上传命令：<code>ls test.txt|xargs -i -n1 curl http://%s:%s/upload -F file=@./{}</code></li>'%(localip,port))
             else:
                 html_sb.append('<li>下载命令：<code>curl -LO http://%s:%s/%s/test.txt</code></li>'%(localip,port,dirname))
-                html_sb.append('<li>上传命令：<code>curl http://%s:%s/upload?dirname=%s/ -F file=@./test.txt</code></li>'%(localip,port,dirname))
+                html_sb.append('<li>上传命令：<code>ls test.txt|xargs -i -n1 curl http://%s:%s/upload?dirname=%s/ -F file=@./{}</code></li>'%(localip,port,dirname))
             html_sb.append('</ol>')
             html_sb.append('<hr>')
             html_sb.append('<ul>')
