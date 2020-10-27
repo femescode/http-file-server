@@ -161,13 +161,16 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         if path=="/upload":
             r, info = self.deal_post_data(queryParams)
             if not r:
-                resultdict.result = 1
-                resultdict.msg = info
+                resultdict["result"] = 1
+                resultdict["msg"] = info
+            else:
+                resultdict["result"] = 0
+                resultdict["files"] = info
         else:
-            resultdict.result = 2
-            resultdict.msg = "No this API."
+            resultdict["result"] = 2
+            resultdict["msg"] = "No this API."
 
-        content = json.dumps(resultdict)
+        content = json.dumps(resultdict) + "\n"
         self.send_response(200)
         self.send_header("Content-Type","application/json; charset=UTF-8")
         self.send_header("Content-Length", len(content.encode('UTF-8')))
@@ -191,14 +194,17 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
         form = cgi.FieldStorage( fp=self.rfile, headers=self.headers, environ={'REQUEST_METHOD':'POST', 'CONTENT_TYPE':self.headers['Content-Type'], })
         try:
+            filenames = list()
             if isinstance(form["file"], list):
                 for record in form["file"]:
                     filepath = "%s%s"%(dirname, record.filename)
                     open(filepath, "wb").write(record.file.read())
+                    filenames.append(record.filename)
             else:
                 filepath = "%s%s"%(dirname, form["file"].filename)
                 open(filepath, "wb").write(form["file"].file.read())
-            return (True, "Files uploaded")
+                filenames.append(form["file"].filename)
+            return (True, "%s" % (','.join(filenames)))
         except IOError:
                 return (False, "Can't create file to write, do you have permission to write? %s"%filepath)
 
