@@ -84,16 +84,14 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         # 列出文件处理
         elif os.path.isdir(fn):
             html_sb = []
-            html_sb.append(
-                '''<style>
+            style = '''
                     .delete{
                         color: red;
                         text-decoration: none;
                         padding-right: 10px;
                     }
-                </style>''')
-            html_sb.append(
-                '''<script>
+                '''
+            script = '''
                     function deleteFunc(url){
                         var r=confirm("确定删除吗?");
                         if (r){
@@ -112,10 +110,11 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                             xmlhttp.send();
                         }
                     }
-                </script>''')
+                '''
+            dirname = re.sub(r'^/|/$', '', path)
+            html_sb.append('<header><title>%s</title><style>%s</style><script>%s</script>'%(dirname,style,script))
             html_sb.append('<h1>Directory listing for '+path+'</h1>')
             html_sb.append('<ol>')
-            dirname = re.sub(r'^/|/$', '', path)
             if dirname == '':
                 html_sb.append('<li>下载命令：<code>curl -LO http://%s:%s/test.txt</code></li>'%(localip,port))
                 html_sb.append('<li>上传命令：<code>ls test.txt|xargs -i -n1 curl http://%s:%s/upload -F file=@./{}</code></li>'%(localip,port))
@@ -222,6 +221,9 @@ def get_host_ip():
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(('8.8.8.8', 80))
         ip = s.getsockname()[0]
+    except Exception as e:
+        print(e)
+        ip = '0.0.0.0'
     finally:
         s.close()
 
