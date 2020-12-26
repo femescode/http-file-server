@@ -112,7 +112,7 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                     }
                 '''
             dirname = re.sub(r'^/|/$', '', path)
-            html_sb.append('<header><title>%s</title><style>%s</style><script>%s</script>'%(dirname,style,script))
+            html_sb.append('<header><title>%s</title><style>%s</style><script>%s</script>'%(path,style,script))
             html_sb.append('<h1>Directory listing for '+path+'</h1>')
             html_sb.append('<ol>')
             if dirname == '':
