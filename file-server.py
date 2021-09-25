@@ -15,6 +15,8 @@ import mimetypes
 import json
 import cgi
 import socket
+import io
+import math
 
 reload(sys)
 sys.setdefaultencoding("utf-8")
@@ -23,6 +25,36 @@ mimetypes.init()
 localip = ""
 port = 8000
 g_filepath = ""
+
+def humansize(size):
+    kb=1024
+    mb=kb*1024
+    gb=mb*1024
+    tb=gb*1024
+    if size>=tb:
+        return "%.1fTB" % (float(size) / tb)
+    elif size>=gb:
+        return "%.1fGB" % (float(size) / gb)
+    elif size>=mb:
+        return "%.1fMB" % (float(size) / mb)
+    elif size>=kb:
+        return "%.1fKB" % (float(size) / kb)
+    else:
+        return "%dB" % size
+
+def is_text(size, fn):
+    if size <= 2097152 and re.search('\.(txt|csv|log|sh|properties|conf|cfg|md)$', fn, re.I):
+        return True
+    return False
+
+def is_jpg(size, fn):
+    return re.search('\.(jpg|jpeg)$', fn, re.I)
+
+def is_png(size, fn):
+    return re.search('\.(png)$', fn, re.I)
+
+def is_svg(size, fn):
+    return re.search('\.(svg)$', fn, re.I)
 
 def transDicts(params):
     dicts={}
@@ -60,11 +92,30 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         # 下载文件处理
         if os.path.isfile(fn):
             filesize = os.path.getsize(fn)
-            self.send_header("Content-Type",'application/octet-stream')
+            if is_text(filesize, fn):
+                self.send_header("Content-Type",'text/plain; charset=utf-8')
+                self.send_header("Content-disposition",'inline')
+            elif is_jpg(filesize, fn):
+                self.send_header("Content-Type",'image/jpeg')
+                self.send_header("Content-disposition",'inline')
+            elif is_png(filesize, fn):
+                self.send_header("Content-Type",'image/png')
+                self.send_header("Content-disposition",'inline')
+            elif is_svg(filesize, fn):
+                self.send_header("Content-Type",'image/svg+xml')
+                self.send_header("Content-disposition",'inline')
+            else:
+                self.send_header("Content-Type",'application/octet-stream')
+                self.send_header("Content-disposition",'attachment')
             self.send_header("Content-Length",filesize)
-            f = open(fn, "rb")
-            content = f.read()
-            f.close()
+            self.end_headers()
+            with io.open(fn, "rb") as f:
+                while True:
+                    data = f.read(10485760)
+                    if not data:
+                        break
+                    self.wfile.write(data)
+            return
         # 删除文件处理
         elif path.endswith('/delete'):
             fn = fn[0:len(fn)-len('/delete')]
@@ -90,6 +141,8 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                         text-decoration: none;
                         padding-right: 10px;
                     }
+                    .one{min-width:180px;float:left;}
+                    .two{min-width:70px;float:left;}
                 '''
             script = '''
                     function deleteFunc(url){
@@ -115,12 +168,11 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             html_sb.append('<header><title>%s</title><style>%s</style><script>%s</script>'%(path,style,script))
             html_sb.append('<h1>Directory listing for '+path+'</h1>')
             html_sb.append('<ol>')
-            if dirname == '':
-                html_sb.append('<li>下载命令：<code>curl -LO http://%s:%s/test.txt</code></li>'%(localip,port))
-                html_sb.append('<li>上传命令：<code>ls test.txt|xargs -i -n1 curl http://%s:%s/upload -F file=@{}</code></li>'%(localip,port))
-            else:
-                html_sb.append('<li>下载命令：<code>curl -LO http://%s:%s/%s/test.txt</code></li>'%(localip,port,dirname))
-                html_sb.append('<li>上传命令：<code>ls test.txt|xargs -i -n1 curl http://%s:%s/upload?dirname=%s/ -F file=@{}</code></li>'%(localip,port,dirname))
+            if dirname != '':
+                dirname = re.sub(r'$', '/', dirname)
+            html_sb.append('<li>下载命令：<code>curl -LO http://%s:%s/%stest.txt</code></li>'%(localip,port,dirname))
+            html_sb.append('<li>上传命令：<code>find test.txt -maxdepth 1 -type f|xargs -i -n1 curl http://%s:%s/%s -F file=@{}|cat</code></li>'%(localip,port,dirname))
+            html_sb.append('<li>上传命令：<code>find test.txt -maxdepth 1 -type f|while read l;do n=$(basename "$l");n=$(urlencode "$n");curl "http://%s:%s/%s$n" --data-binary @"$l"|cat; done</code></li>'%(localip,port,dirname))
             html_sb.append('</ol>')
             html_sb.append('<hr>')
             html_sb.append('<ul>')
@@ -133,7 +185,9 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                     else:
                         deletehtml='<a href="javascript:deleteFunc(\'{}/delete\')" class="delete">×</a>'.format(filename)
                     mtime = os.path.getmtime(filepath)
-                    html_sb.append('<li>{}<a href="{}">{}</a></li>'.format(deletehtml,filename,filename))
+                    filetime = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime))
+                    filesize = os.path.getsize(filepath)
+                    html_sb.append('<li><div class="one">{}</div><div class="two">{}</div>{}<a href="{}">{}</a></li>'.format(filetime,humansize(filesize),deletehtml,filename,filename))
             html_sb.append('</ul>')
             html_sb.append('<hr>')
             content = '\n'.join(html_sb)
@@ -157,17 +211,13 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 queryParams = transDicts(query[1])
 
         resultdict = {"result":0, "msg":"OK"}
-        if path=="/upload":
-            r, info = self.deal_post_data(queryParams)
-            if not r:
-                resultdict["result"] = 1
-                resultdict["msg"] = info
-            else:
-                resultdict["result"] = 0
-                resultdict["files"] = info
+        r, info = self.deal_post_data(path, queryParams)
+        if not r:
+            resultdict["result"] = 1
+            resultdict["msg"] = info
         else:
-            resultdict["result"] = 2
-            resultdict["msg"] = "No this API."
+            resultdict["result"] = 0
+            resultdict["files"] = info
 
         content = json.dumps(resultdict) + "\n"
         self.send_response(200)
@@ -176,36 +226,56 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content)
 
-    def deal_post_data(self,queryParams):
-        dirname = queryParams.get("dirname")
+    def deal_post_data(self,path, queryParams):
+        dirname = path
         if dirname is None:
             dirname = ''
         dirname = dirname.strip()
-        dirname = re.sub(r'(?!/)$', '/', dirname)
         dirname = re.sub(r'^/', '', dirname)
         dirname = "%s%s" % (g_filepath, dirname)
-        if dirname != '' and not os.path.exists(dirname):
-            os.makedirs(dirname)
 
         ctype, pdict = cgi.parse_header(self.headers['Content-Type'])
         if ctype != 'multipart/form-data':
-            return (False, "request is not a multipart/form-data.")
+            dirname = re.sub(r'/$', '', dirname)
+            if dirname == '' or os.path.isdir(dirname):
+                return (False, "%s is dir, cannot write file! " % dirname)
+            if dirname.find('/') > -1:
+                idx = dirname.rfind('/')
+                dirname = dirname[0:idx] + urllib.unquote_plus(dirname[idx:]).decode("utf-8", "ignore")
 
-        form = cgi.FieldStorage( fp=self.rfile, headers=self.headers, environ={'REQUEST_METHOD':'POST', 'CONTENT_TYPE':self.headers['Content-Type'], })
-        try:
-            filenames = list()
-            if isinstance(form["file"], list):
-                for record in form["file"]:
+            remainLength = int(self.headers['Content-Length'])
+            buflen = 10485760
+            with io.open(dirname, "wb+") as f:
+                while remainLength > 0:
+                    readlen = min(remainLength, buflen)
+                    data = self.rfile.read(readlen)
+                    if not data:
+                        break
+                    f.write(data)
+                    remainLength -= readlen
+            return (True, dirname)
+        else:
+            dirname = re.sub(r'(?!/)$', '/', dirname)
+            if dirname != '' and not os.path.exists(dirname):
+                os.makedirs(dirname)
+
+            form = cgi.FieldStorage( fp=self.rfile, headers=self.headers, environ={'REQUEST_METHOD':'POST', 'CONTENT_TYPE':self.headers['Content-Type'], })
+            try:
+                filelist = form["file"]
+                if not isinstance(form["file"], list):
+                    filelist = list()
+                    filelist.append(form["file"])
+                for record in filelist:
                     filepath = "%s%s"%(dirname, record.filename)
-                    open(filepath, "wb").write(record.file.read())
-                    filenames.append(record.filename)
-            else:
-                filepath = "%s%s"%(dirname, form["file"].filename)
-                open(filepath, "wb").write(form["file"].file.read())
-                filenames.append(form["file"].filename)
-            return (True, "%s" % (','.join(filenames)))
-        except IOError:
-                return (False, "Can't create file to write, do you have permission to write? %s"%filepath)
+                    with io.open(filepath, "wb") as fw:
+                        while True:
+                            data = record.file.read(10485760)
+                            if not data:
+                                break
+                            fw.write(data)
+                return (True, ','.join([record.filename for record in filelist]))
+            except IOError:
+                return (False, "Can't create file to write, do you have permission to write? %s" % filepath)
 
 class ThreadingHTTPServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
     pass
