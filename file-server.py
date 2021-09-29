@@ -171,8 +171,8 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             if dirname != '':
                 dirname = re.sub(r'$', '/', dirname)
             html_sb.append('<li>下载命令：<code>curl -LO http://%s:%s/%stest.txt</code></li>'%(localip,port,dirname))
-            html_sb.append('<li>上传命令：<code>find test.txt -maxdepth 1 -type f|xargs -i -n1 curl http://%s:%s/%s -F file=@{}|cat</code></li>'%(localip,port,dirname))
-            html_sb.append('<li>上传命令：<code>find test.txt -maxdepth 1 -type f|while read l;do n=$(basename "$l"|tr -d "\\n"|xxd -ps|sed "s/../%%&/g");curl "http://%s:%s/%s$n" --data-binary @"$l"|cat; done</code></li>'%(localip,port,dirname))
+            html_sb.append('<li>上传命令(小文件)：<code>find test.txt -maxdepth 1 -type f|xargs -i -n1 curl http://%s:%s/%s -F file=@{}|cat</code></li>'%(localip,port,dirname))
+            html_sb.append('<li>上传命令(大文件)：<code>find test.txt -maxdepth 1 -type f|while read l;do n=$(basename "$l"|tr -d "\\n"|xxd -ps|sed "s/../%%&/g");curl "http://%s:%s/%s$n" --data-binary @"$l"|cat; done</code></li>'%(localip,port,dirname))
             html_sb.append('</ol>')
             html_sb.append('<hr>')
             html_sb.append('<ul>')
