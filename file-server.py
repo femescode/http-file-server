@@ -6,7 +6,6 @@ import sys
 import urllib
 import codecs
 import glob
-import commands
 import time
 import re
 import BaseHTTPServer
@@ -17,14 +16,42 @@ import cgi
 import socket
 import io
 import math
+import argparse
 
-reload(sys)
-sys.setdefaultencoding("utf-8")
-mimetypes.init()
 
 localip = ""
 port = 8000
-g_filepath = ""
+localpath = "."
+
+style = '''
+        .delete{
+            color: red;
+            text-decoration: none;
+            padding-right: 10px;
+        }
+        .one{min-width:180px;float:left;}
+        .two{min-width:70px;float:left;}
+    '''
+script = '''
+        function deleteFunc(url){
+            var r=confirm("确定删除吗?");
+            if (r){
+                var xmlhttp=new XMLHttpRequest();
+                xmlhttp.onreadystatechange=function(){
+                    if (xmlhttp.readyState==4 && xmlhttp.status==200){
+                        var res=JSON.parse(xmlhttp.responseText);
+                        if(res.result == 0){
+                            location.reload();
+                        }else{
+                            alert(res.msg);
+                        }
+                    }
+                }
+                xmlhttp.open("GET",url,true);
+                xmlhttp.send();
+            }
+        }
+    '''
 
 def humansize(size):
     kb=1024
@@ -56,7 +83,7 @@ def is_png(size, fn):
 def is_svg(size, fn):
     return re.search('\.(svg)$', fn, re.I)
 
-def transDicts(params):
+def parseQueryString(params):
     dicts={}
     if len(params)==0:
         return
@@ -77,13 +104,8 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_GET(self):
         query = urllib.splitquery(self.path)
         path = urllib.unquote_plus(query[0]).decode("utf-8", "ignore")
-        queryParams = {}
 
-        if "?" in self.path:
-            if query[1]:
-                queryParams = transDicts(query[1])
-
-        fn = "%s%s" % (g_filepath, path)
+        fn = "%s%s" % (localpath, path)
         fn = urllib.unquote_plus(fn).decode("utf-8", "ignore")
         fn = fn.replace("/",os.sep)
 
@@ -135,35 +157,6 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         # 列出文件处理
         elif os.path.isdir(fn):
             html_sb = []
-            style = '''
-                    .delete{
-                        color: red;
-                        text-decoration: none;
-                        padding-right: 10px;
-                    }
-                    .one{min-width:180px;float:left;}
-                    .two{min-width:70px;float:left;}
-                '''
-            script = '''
-                    function deleteFunc(url){
-                        var r=confirm("确定删除吗?");
-                        if (r){
-                            var xmlhttp=new XMLHttpRequest();
-                            xmlhttp.onreadystatechange=function(){
-                                if (xmlhttp.readyState==4 && xmlhttp.status==200){
-                                    var res=JSON.parse(xmlhttp.responseText);
-                                    if(res.result == 0){
-                                        location.reload();
-                                    }else{
-                                        alert(res.msg);
-                                    }
-                                }
-                            }
-                            xmlhttp.open("GET",url,true);
-                            xmlhttp.send();
-                        }
-                    }
-                '''
             dirname = re.sub(r'^/|/$', '', path)
             html_sb.append('<header><title>%s</title><style>%s</style><script>%s</script>'%(path,style,script))
             html_sb.append('<h1>Directory listing for '+path+'</h1>')
@@ -177,17 +170,19 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             html_sb.append('<hr>')
             html_sb.append('<ul>')
             for filename in os.listdir(fn):
-                if filename[0] != ".":
-                    filepath = "%s%s%s" % (fn, os.sep, filename)
-                    if os.path.isdir(filepath):
-                        deletehtml='<a href="javascript:deleteFunc(\'{}/delete\')" class="delete">×</a>'.format(filename)
-                        filename += os.sep
-                    else:
-                        deletehtml='<a href="javascript:deleteFunc(\'{}/delete\')" class="delete">×</a>'.format(filename)
-                    mtime = os.path.getmtime(filepath)
-                    filetime = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime))
-                    filesize = os.path.getsize(filepath)
-                    html_sb.append('<li><div class="one">{}</div><div class="two">{}</div>{}<a href="{}">{}</a></li>'.format(filetime,humansize(filesize),deletehtml,filename,filename))
+                # 忽略隐藏文件
+                if filename[0] == ".":
+                    continue
+                filepath = "%s%s%s" % (fn, os.sep, filename)
+                if os.path.isdir(filepath):
+                    deletehtml='<a href="javascript:deleteFunc(\'{}/delete\')" class="delete">×</a>'.format(filename)
+                    filename += os.sep
+                else:
+                    deletehtml='<a href="javascript:deleteFunc(\'{}/delete\')" class="delete">×</a>'.format(filename)
+                mtime = os.path.getmtime(filepath)
+                filetime = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime))
+                filesize = os.path.getsize(filepath)
+                html_sb.append('<li><div class="one">{}</div><div class="two">{}</div>{}<a href="{}">{}</a></li>'.format(filetime,humansize(filesize),deletehtml,filename,filename))
             html_sb.append('</ul>')
             html_sb.append('<hr>')
             content = '\n'.join(html_sb)
@@ -208,7 +203,7 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
         if "?" in self.path:
             if query[1]:
-                queryParams = transDicts(query[1])
+                queryParams = parseQueryString(query[1])
 
         resultdict = {"result":0, "msg":"OK"}
         r, info = self.deal_post_data(path, queryParams)
@@ -232,7 +227,7 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             dirname = ''
         dirname = dirname.strip()
         dirname = re.sub(r'^/', '', dirname)
-        dirname = "%s%s" % (g_filepath, dirname)
+        dirname = "%s%s" % (localpath, dirname)
 
         ctype, pdict = cgi.parse_header(self.headers['Content-Type'])
         if ctype != 'multipart/form-data':
@@ -241,7 +236,7 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 return (False, "%s is dir, cannot write file! " % dirname)
             if dirname.find('/') > -1:
                 idx = dirname.rfind('/')
-                dirname = dirname[0:idx] + urllib.unquote_plus(dirname[idx:]).decode("utf-8", "ignore")
+                dirname = dirname[0:idx] + urllib.unquote_plus(dirname[idx:]).decode("utf-8", "ignore").strip()
 
             remainLength = int(self.headers['Content-Length'])
             buflen = 10485760
@@ -281,8 +276,7 @@ class ThreadingHTTPServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer
     pass
 
 def run(port):
-    print("HTTP File Server Started at : http://%s:%s/" % (localip,port))
-    server_address = ("", port)
+    print("HTTP File Server Started at : http://%s:%s/, localpath is: %s" % (localip,port,localpath))
     httpd = ThreadingHTTPServer(("", port), HTTPRequestHandler)
     httpd.serve_forever()
 
@@ -299,17 +293,41 @@ def get_host_ip():
 
     return ip
 
-if __name__=="__main__":
-    g_filepath = "./files/"
-    if len(sys.argv)>=2:
-        g_filepath = sys.argv[1]
-    if g_filepath[-1]!=os.sep:
-        g_filepath += os.sep
-    g_filepath = g_filepath.replace("/",os.sep)
+def normalizePath(path):
+    if path[-1] != os.sep:
+        path += os.sep
+    path = path.replace("/",os.sep)
+    return path
 
+def initStdoutCharset():
+    try:
+        reload(sys)
+        sys.setdefaultencoding('utf8')
+    except Exception as e:
+        pass
+    localLang = os.environ.get("LANG")
+    if localLang is None:
+        os.environ['LANG']="zh_CN.UTF-8"
+        os.environ['LC_ALL']="zh_CN.UTF-8"
+        localCharset='utf8'
+    elif localLang is None or localLang.find('GBK') > -1 :
+        localCharset='GBK'
+    else:
+        localCharset='utf8'
+    try:
+        sys.stdout=io.TextIOWrapper(sys.stdout.buffer,encoding=localCharset)
+    except Exception as e:
+        pass
+
+if __name__=="__main__":
+    initStdoutCharset()
+    mimetypes.init()
+    parser = argparse.ArgumentParser(description='http file server.')
+    parser.add_argument('localpath', nargs='?', default='.')
+    parser.add_argument('port', nargs='?', type=int, default=8000)
+    args = parser.parse_args()
+    localpath = normalizePath(args.localpath)
     localip = get_host_ip()
-    port = 8000
-    if len(sys.argv)==3:
-        port = int(sys.argv[2])
+    port = args.port
 
     run(port)
