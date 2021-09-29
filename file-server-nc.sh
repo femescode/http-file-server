@@ -81,7 +81,7 @@ while read line; do
         filepath=$("urlencode" -d "${BASH_REMATCH[1]:-.}")
         echo "--> $filepath" > /dev/tty;
         if [[ -d "$filepath" ]]; then
-            content=$(ls -ltQhp --time-style='+%FT%T' "$filepath"|awk -v FPAT='"([^"]+|"")*"|\\S+' 'NR>1{
+            content=$(ls -lthQp --time-style='+%FT%T' "$filepath"|awk -v FPAT='"([^"\\\\]|\\\\.|"")*"/?|\\S+' 'NR>1{
                 s=gensub(/"/,"","g",$7);
                 printf "<li><div class=\"one\">%s</div><div class=\"two\">%s</div><a href=\"%s\">%s</a></li>\n",$6,$5,s,s
                 }');
