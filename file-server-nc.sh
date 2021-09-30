@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash 
 
 to_html(){
     filepath="$1"
@@ -15,6 +15,10 @@ to_html(){
     </head>
     <body>
     <h1>Directory listing for '"$filepath"'</h1>
+    <ol>
+    <li>下载命令：<code>curl -LO http://{{serverip}}:{{port}}/{{dirpath}}/test.txt</code></li>
+    <li>上传命令(大文件)：<code>find test.txt -maxdepth 1 -type f|while read l;do n=$(basename "$l"|tr -d "\\n"|xxd -ps|sed "s/../%&/g");curl "http://{{serverip}}:{{port}}/{{dirpath}}/$n" --data-binary @"$l"|cat; done</code></li>
+    </ol>
     <hr>
     <ul>
     '"$content"'
@@ -76,11 +80,13 @@ is_svg(){
 }
 
 while read line; do
-    pat='^GET /(([^/]+/?)*) HTTP/1.1'
-    if [[ "$line" =~ $pat ]]; then
+    getpat='^GET /(([^/]+/?)*) HTTP/1.1'
+    if [[ "$line" =~ $getpat ]]; then
+        # 获取下载路径
         filepath=$("urlencode" -d "${BASH_REMATCH[1]:-.}")
-        echo "--> $filepath" > /dev/tty;
+        echo "--> GET: $filepath" > /dev/tty;
         if [[ -d "$filepath" ]]; then
+            # 列出目录
             content=$(ls -lthQp --time-style='+%FT%T' "$filepath"|awk -v FPAT='"([^"\\\\]|\\\\.|"")*"/?|\\S+' 'NR>1{
                 s=gensub(/"/,"","g",$7);
                 printf "<li><div class=\"one\">%s</div><div class=\"two\">%s</div><a href=\"%s\">%s</a></li>\n",$6,$5,s,s
@@ -88,6 +94,7 @@ while read line; do
             content=$(to_html "$filepath" "$content")
             print_content 200 "Content-Type: text/html; charset=utf-8" "$content"
         elif [[ -f "$filepath" ]]; then
+            # 查看或下载文件
             if is_text "$filepath";then
                 cat_file 200 $'Content-Type: text/plain; charset=utf-8\r\nContent-disposition: inline' "$filepath"
             elif is_jpg "$filepath";then
@@ -101,6 +108,27 @@ while read line; do
             fi
         else
             print_content 404 "Content-Type: text/html; charset=utf-8" "404"
+        fi
+    fi
+    postpat='^POST /(([^/]+/?)*) HTTP/1.1'
+    if [[ "$line" =~ $postpat ]]; then
+        # 获取上传路径
+        filepath=$("urlencode" -d "${BASH_REMATCH[1]:-.}")
+        echo "--> POST: $filepath" > /dev/tty;
+        # 获取Content-Length并读完http header
+        clpat='Content-Length: (\w+)'
+        while read h; do
+            if [[ "$h" =~ $clpat ]]; then
+                contentLength="${BASH_REMATCH[1]}"
+            elif [[ "$h" =~ ^[[:space:]]+$ ]]; then
+                break;
+            fi
+        done
+        # 保存上传的文件
+        if [[ "$contentLength" && ! -d "$filepath" ]]; then
+            head -c "$contentLength" > "$filepath"
+            print_content 200 "Content-Type: text/html; charset=utf-8" "$filepath upload done!"
+            unset contentLength
         fi
     fi
 done
