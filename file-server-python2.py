@@ -104,6 +104,10 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_GET(self):
         query = urllib.splitquery(self.path)
         path = urllib.unquote_plus(query[0]).decode("utf-8", "ignore")
+        if re.search(r'/?\.\./?', path, re.I):
+            self.send_response(400)
+            self.end_headers()
+            return
 
         fn = "%s%s" % (localpath, path)
         fn = urllib.unquote_plus(fn).decode("utf-8", "ignore")
@@ -199,6 +203,11 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_POST(self):
         query = urllib.splitquery(self.path)
         path = query[0]
+        if re.search(r'/?\.\./?', path, re.I):
+            self.send_response(400)
+            self.end_headers()
+            return
+
         queryParams = {}
 
         if "?" in self.path:
