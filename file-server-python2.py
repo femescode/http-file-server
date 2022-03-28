@@ -33,9 +33,11 @@ style = '''
         .two{min-width:70px;float:left;}
     '''
 script = '''
-        function deleteFunc(url){
+        function deleteFunc(filename){
             var r=confirm("确定删除吗?");
             if (r){
+                var fileurl=window.location.href + (window.location.href.endsWith("/") ? "" : "/") + filename;
+                var url=fileurl + "?operation=delete"
                 var xmlhttp=new XMLHttpRequest();
                 xmlhttp.onreadystatechange=function(){
                     if (xmlhttp.readyState==4 && xmlhttp.status==200){
@@ -50,6 +52,24 @@ script = '''
                 xmlhttp.open("GET",url,true);
                 xmlhttp.send();
             }
+        }
+        function create_dir(){
+            var dirname=document.getElementById("create_dir_input").value;
+            var dirurl=window.location.href + (window.location.href.endsWith("/") ? "" : "/") + dirname;
+            var url=dirurl + "?operation=create"
+            var xmlhttp=new XMLHttpRequest();
+            xmlhttp.onreadystatechange=function(){
+                if (xmlhttp.readyState==4 && xmlhttp.status==200){
+                    var res=JSON.parse(xmlhttp.responseText);
+                    if(res.result == 0){
+                        window.location=dirurl + '/';
+                    }else{
+                        alert(res.msg);
+                    }
+                }
+            }
+            xmlhttp.open("GET",url,true);
+            xmlhttp.send();
         }
     '''
 
@@ -115,8 +135,31 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
         content = ""
         self.send_response(200)
+        # 创建目录
+        if 'operation=create' in self.path:
+            dirname = fn
+            if dirname != '' and not os.path.exists(dirname):
+                os.makedirs(dirname)
+            content = json.dumps({"result":0, "msg":"创建成功！"}, ensure_ascii=False)
+            self.send_header("Content-Type","application/json; charset=UTF-8")
+            self.send_header("Content-Length", len(content.encode('UTF-8')))
+        # 删除文件处理
+        elif 'operation=delete' in self.path:
+            if os.path.isfile(fn):
+                os.remove(fn)
+                content = json.dumps({"result":0, "msg":"删除成功！"}, ensure_ascii=False)
+            elif os.path.isdir(fn):
+                if len(os.listdir(fn)) == 0:
+                    os.rmdir(fn)
+                    content = json.dumps({"result":0, "msg":"删除成功！"}, ensure_ascii=False)
+                else:
+                    content = json.dumps({"result":1, "msg":"删除失败，目录中存在文件，无法删除！"}, ensure_ascii=False)
+            else:
+                content = json.dumps({"result":2, "msg":"删除失败，未找到该文件！"}, ensure_ascii=False)
+            self.send_header("Content-Type","application/json; charset=UTF-8")
+            self.send_header("Content-Length", len(content.encode('UTF-8')))
         # 下载文件处理
-        if os.path.isfile(fn):
+        elif os.path.isfile(fn):
             filesize = os.path.getsize(fn)
             if is_text(filesize, fn):
                 self.send_header("Content-Type",'text/plain; charset=utf-8')
@@ -142,31 +185,26 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                         break
                     self.wfile.write(data)
             return
-        # 删除文件处理
-        elif path.endswith('/delete'):
-            fn = fn[0:len(fn)-len('/delete')]
-            if os.path.isfile(fn):
-                os.remove(fn)
-                content = json.dumps({"result":0, "msg":"删除成功！"})
-            elif os.path.isdir(fn):
-                if len(os.listdir(fn)) == 0:
-                    os.rmdir(fn)
-                    content = json.dumps({"result":0, "msg":"删除成功！"})
-                else:
-                    content = json.dumps({"result":1, "msg":"删除失败，目录中存在文件，无法删除！"})
-            else:
-                content = json.dumps({"result":2, "msg":"删除失败，未找到该文件！"})
-            self.send_header("Content-Type","application/json; charset=UTF-8")
-            self.send_header("Content-Length", len(content.encode('UTF-8')))
+
         # 列出文件处理
         elif os.path.isdir(fn):
             html_sb = []
             dirname = re.sub(r'^/|/$', '', path)
+            html_sb.append('''<html><head>
+                        <base href="%s">
+                        <meta http-equiv="Expires" content="0">
+                        <meta http-equiv="Pragma" content="no-cache">
+                        <meta http-equiv="Cache-control" content="no-cache">
+                        <meta http-equiv="Cache" content="no-cache">
+                    </head><body>'''%(path))
             html_sb.append('<header><title>%s</title><style>%s</style><script>%s</script>'%(path,style,script))
             html_sb.append('<h1>Directory listing for '+path+'</h1>')
+            if dirname=='' or dirname=='/':
+                html_sb.append('<h4 style="color:red;">注：根目录不允许上传文件，请创建或选择目录后再上传！</h4>')
             html_sb.append('<ol>')
             if dirname != '':
                 dirname = re.sub(r'$', '/', dirname)
+            html_sb.append('<li>当前目录：<code>%s</code>, <input id="create_dir_input" type="text"></input><button onclick="create_dir()">创建目录</button></li>'%(dirname))
             html_sb.append('<li>下载命令：<code>curl -LO http://%s:%s/%stest.txt</code></li>'%(localip,port,dirname))
             html_sb.append('<li>上传命令(小文件)：<code>find test.txt -maxdepth 1 -type f|xargs -i -n1 curl http://%s:%s/%s -F file=@{}|cat</code></li>'%(localip,port,dirname))
             html_sb.append('<li>上传命令(大文件)：<code>find test.txt -maxdepth 1 -type f|while read l;do n=$(basename "$l"|tr -d "\\n"|xxd -ps|sed "s/../%%&/g");curl "http://%s:%s/%s$n" --data-binary @"$l"|cat; done</code></li>'%(localip,port,dirname))
@@ -179,19 +217,21 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                     continue
                 filepath = "%s%s%s" % (fn, os.sep, filename)
                 if os.path.isdir(filepath):
-                    deletehtml='<a href="javascript:deleteFunc(\'{}/delete\')" class="delete">×</a>'.format(filename)
+                    deletehtml='<a href="javascript:deleteFunc(\'{}\')" class="delete">×</a>'.format(filename)
                     filename += os.sep
                 else:
-                    deletehtml='<a href="javascript:deleteFunc(\'{}/delete\')" class="delete">×</a>'.format(filename)
+                    deletehtml='<a href="javascript:deleteFunc(\'{}\')" class="delete">×</a>'.format(filename)
                 mtime = os.path.getmtime(filepath)
                 filetime = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime))
                 filesize = os.path.getsize(filepath)
                 html_sb.append('<li><div class="one">{}</div><div class="two">{}</div>{}<a href="{}">{}</a></li>'.format(filetime,humansize(filesize),deletehtml,filename,filename))
             html_sb.append('</ul>')
             html_sb.append('<hr>')
+            html_sb.append('</body></html>')
             content = '\n'.join(html_sb)
             self.send_header("Content-Type","text/html; charset=UTF-8")
             self.send_header("Content-Length", len(content.encode('UTF-8')))
+            self.send_header("Cache-Control", "no-store")
         else:
             content = "<h1>404<h1>"
             self.send_header("Content-Type","text/html; charset=UTF-8")
@@ -206,6 +246,15 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         if re.search(r'/?\.\./?', path, re.I):
             self.send_response(400)
             self.end_headers()
+            return
+        if path=='' or path=='/':
+            self.send_response(400)
+            resultdict = {"result":400, "msg":"根目录不允许上传文件！请选择或创建一个自己的目录后再上传！"}
+            content = json.dumps(resultdict, ensure_ascii=False) + "\n"
+            self.send_header("Content-Type","application/json; charset=UTF-8")
+            self.send_header("Content-Length", len(content.encode('UTF-8')))
+            self.end_headers()
+            self.wfile.write(content)
             return
 
         queryParams = {}
@@ -223,7 +272,7 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             resultdict["result"] = 0
             resultdict["files"] = info
 
-        content = json.dumps(resultdict) + "\n"
+        content = json.dumps(resultdict, ensure_ascii=False) + "\n"
         self.send_response(200)
         self.send_header("Content-Type","application/json; charset=UTF-8")
         self.send_header("Content-Length", len(content.encode('UTF-8')))
