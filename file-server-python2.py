@@ -21,7 +21,7 @@ import argparse
 
 localip = ""
 port = 8000
-localpath = "."
+localRootPath = "."
 
 style = '''
         .delete{
@@ -30,7 +30,7 @@ style = '''
             padding-right: 10px;
         }
         .one{min-width:180px;float:left;}
-        .two{min-width:70px;float:left;}
+        .two{min-width:80px;float:left;}
     '''
 script = '''
         function deleteFunc(filename){
@@ -89,19 +89,19 @@ def humansize(size):
     else:
         return "%dB" % size
 
-def is_text(size, fn):
-    if size <= 2097152 and re.search('\.(txt|csv|log|sh|properties|conf|cfg|md)$', fn, re.I):
+def is_text(size, path):
+    if size <= 2097152 and re.search('\.(txt|csv|log|sh|properties|conf|cfg|md)$', path, re.I):
         return True
     return False
 
-def is_jpg(size, fn):
-    return re.search('\.(jpg|jpeg)$', fn, re.I)
+def is_jpg(size, path):
+    return re.search('\.(jpg|jpeg)$', path, re.I)
 
-def is_png(size, fn):
-    return re.search('\.(png)$', fn, re.I)
+def is_png(size, path):
+    return re.search('\.(png)$', path, re.I)
 
-def is_svg(size, fn):
-    return re.search('\.(svg)$', fn, re.I)
+def is_svg(size, path):
+    return re.search('\.(svg)$', path, re.I)
 
 def parseQueryString(params):
     dicts={}
@@ -124,33 +124,33 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_GET(self):
         query = urllib.splitquery(self.path)
         path = urllib.unquote_plus(query[0]).decode("utf-8", "ignore")
+
         if re.search(r'/?\.\./?', path, re.I):
             self.send_response(400)
             self.end_headers()
             return
 
-        fn = "%s%s" % (localpath, path)
-        fn = urllib.unquote_plus(fn).decode("utf-8", "ignore")
-        fn = fn.replace("/",os.sep)
+        localPath = "%s%s" % (localRootPath, path)
+        localPath = urllib.unquote_plus(localPath).decode("utf-8", "ignore")
+        localPath = localPath.replace("/",os.sep)
 
         content = ""
         self.send_response(200)
         # 创建目录
         if 'operation=create' in self.path:
-            dirname = fn
-            if dirname != '' and not os.path.exists(dirname):
-                os.makedirs(dirname)
+            if localPath != '' and not os.path.exists(localPath):
+                os.makedirs(localPath)
             content = json.dumps({"result":0, "msg":"创建成功！"}, ensure_ascii=False)
             self.send_header("Content-Type","application/json; charset=UTF-8")
             self.send_header("Content-Length", len(content.encode('UTF-8')))
         # 删除文件处理
         elif 'operation=delete' in self.path:
-            if os.path.isfile(fn):
-                os.remove(fn)
+            if os.path.isfile(localPath):
+                os.remove(localPath)
                 content = json.dumps({"result":0, "msg":"删除成功！"}, ensure_ascii=False)
-            elif os.path.isdir(fn):
-                if len(os.listdir(fn)) == 0:
-                    os.rmdir(fn)
+            elif os.path.isdir(localPath):
+                if len(os.listdir(localPath)) == 0:
+                    os.rmdir(localPath)
                     content = json.dumps({"result":0, "msg":"删除成功！"}, ensure_ascii=False)
                 else:
                     content = json.dumps({"result":1, "msg":"删除失败，目录中存在文件，无法删除！"}, ensure_ascii=False)
@@ -159,18 +159,18 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             self.send_header("Content-Type","application/json; charset=UTF-8")
             self.send_header("Content-Length", len(content.encode('UTF-8')))
         # 下载文件处理
-        elif os.path.isfile(fn):
-            filesize = os.path.getsize(fn)
-            if is_text(filesize, fn):
+        elif os.path.isfile(localPath):
+            filesize = os.path.getsize(localPath)
+            if is_text(filesize, localPath):
                 self.send_header("Content-Type",'text/plain; charset=utf-8')
                 self.send_header("Content-disposition",'inline')
-            elif is_jpg(filesize, fn):
+            elif is_jpg(filesize, localPath):
                 self.send_header("Content-Type",'image/jpeg')
                 self.send_header("Content-disposition",'inline')
-            elif is_png(filesize, fn):
+            elif is_png(filesize, localPath):
                 self.send_header("Content-Type",'image/png')
                 self.send_header("Content-disposition",'inline')
-            elif is_svg(filesize, fn):
+            elif is_svg(filesize, localPath):
                 self.send_header("Content-Type",'image/svg+xml')
                 self.send_header("Content-disposition",'inline')
             else:
@@ -178,7 +178,7 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 self.send_header("Content-disposition",'attachment')
             self.send_header("Content-Length",filesize)
             self.end_headers()
-            with io.open(fn, "rb") as f:
+            with io.open(localPath, "rb") as f:
                 while True:
                     data = f.read(10485760)
                     if not data:
@@ -187,44 +187,41 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             return
 
         # 列出文件处理
-        elif os.path.isdir(fn):
+        elif os.path.isdir(localPath):
             html_sb = []
-            dirname = re.sub(r'^/|/$', '', path)
+            bathHttpPath = path
+            fullHttpPath = re.sub(r'^/|/$', '', 'http://%s:%s/%s'%(localip,port,re.sub(r'^/|/$', '', path)))
             html_sb.append('''<html><head>
                         <base href="%s">
                         <meta http-equiv="Expires" content="0">
                         <meta http-equiv="Pragma" content="no-cache">
                         <meta http-equiv="Cache-control" content="no-cache">
                         <meta http-equiv="Cache" content="no-cache">
-                    </head><body>'''%(path))
-            html_sb.append('<header><title>%s</title><style>%s</style><script>%s</script>'%(path,style,script))
-            html_sb.append('<h1>Directory listing for '+path+'</h1>')
-            if dirname=='' or dirname=='/':
+                    </head><body>'''%(bathHttpPath))
+            html_sb.append('<header><title>%s</title><style>%s</style><script>%s</script>'%(bathHttpPath,style,script))
+            html_sb.append('<h1>Directory listing for '+bathHttpPath+'</h1>')
+            if bathHttpPath=='' or bathHttpPath=='/':
                 html_sb.append('<h4 style="color:red;">注：根目录不允许上传文件，请创建或选择目录后再上传！</h4>')
             html_sb.append('<ol>')
-            if dirname != '':
-                dirname = re.sub(r'$', '/', dirname)
-            html_sb.append('<li>当前目录：<code>%s</code>, <input id="create_dir_input" type="text"></input><button onclick="create_dir()">创建目录</button></li>'%(dirname))
-            html_sb.append('<li>下载命令：<code>curl -LO http://%s:%s/%stest.txt</code></li>'%(localip,port,dirname))
-            html_sb.append('<li>上传命令(小文件)：<code>find test.txt -maxdepth 1 -type f|xargs -i -n1 curl http://%s:%s/%s -F file=@{}|cat</code></li>'%(localip,port,dirname))
-            html_sb.append('<li>上传命令(大文件)：<code>find test.txt -maxdepth 1 -type f|while read l;do n=$(basename "$l"|tr -d "\\n"|xxd -ps|sed "s/../%%&/g");curl "http://%s:%s/%s$n" --data-binary @"$l"|cat; done</code></li>'%(localip,port,dirname))
+            html_sb.append('<li>当前目录：<code>%s</code>, <input id="create_dir_input" type="text"></input><button onclick="create_dir()">创建目录</button></li>'%(bathHttpPath))
+            html_sb.append('<li>下载命令：<code>curl -LO %s/test.txt</code></li>'%(fullHttpPath))
+            html_sb.append('<li>上传命令(小文件)：<code>find test.txt -maxdepth 1 -type f|xargs -i -n1 curl %s -F file=@{}|cat</code></li>'%(fullHttpPath))
+            html_sb.append('<li>上传命令(大文件)：<code>find test.txt -maxdepth 1 -type f|while read l;do n=$(basename "$l"|tr -d "\\n"|xxd -ps|sed "s/../%%&/g");curl "%s/$n" --data-binary @"$l"|cat; done</code></li>'%(fullHttpPath))
             html_sb.append('</ol>')
             html_sb.append('<hr>')
             html_sb.append('<ul>')
-            for filename in os.listdir(fn):
+            for filename in os.listdir(localPath):
                 # 忽略隐藏文件
                 if filename[0] == ".":
                     continue
-                filepath = "%s%s%s" % (fn, os.sep, filename)
+                filepath = "%s%s%s" % (localPath, os.sep, filename)
+                deletehtml='<a href="javascript:deleteFunc(\'{}\')" class="delete">×</a>'.format(filename)
                 if os.path.isdir(filepath):
-                    deletehtml='<a href="javascript:deleteFunc(\'{}\')" class="delete">×</a>'.format(filename)
                     filename += os.sep
-                else:
-                    deletehtml='<a href="javascript:deleteFunc(\'{}\')" class="delete">×</a>'.format(filename)
                 mtime = os.path.getmtime(filepath)
                 filetime = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime))
                 filesize = os.path.getsize(filepath)
-                html_sb.append('<li><div class="one">{}</div><div class="two">{}</div>{}<a href="{}">{}</a></li>'.format(filetime,humansize(filesize),deletehtml,filename,filename))
+                html_sb.append('<li><div class="one">{}</div><div class="two">{}</div>{}<a href="{}">{}</a></li>'.format(filetime,humansize(filesize),deletehtml,fullHttpPath+'/'+filename,filename))
             html_sb.append('</ul>')
             html_sb.append('<hr>')
             html_sb.append('</body></html>')
@@ -285,7 +282,7 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             dirname = ''
         dirname = dirname.strip()
         dirname = re.sub(r'^/', '', dirname)
-        dirname = "%s%s" % (localpath, dirname)
+        dirname = "%s%s" % (localRootPath, dirname)
 
         ctype, pdict = cgi.parse_header(self.headers['Content-Type'])
         if ctype != 'multipart/form-data':
@@ -334,7 +331,7 @@ class ThreadingHTTPServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer
     pass
 
 def run(port):
-    print("HTTP File Server Started at : http://%s:%s/, localpath is: %s" % (localip,port,localpath))
+    print("HTTP File Server Started at : http://%s:%s/, localRootPath is: %s" % (localip,port,localRootPath))
     httpd = ThreadingHTTPServer(("", port), HTTPRequestHandler)
     httpd.serve_forever()
 
@@ -381,10 +378,10 @@ if __name__=="__main__":
     initStdoutCharset()
     mimetypes.init()
     parser = argparse.ArgumentParser(description='http file server.')
-    parser.add_argument('localpath', nargs='?', default='.')
+    parser.add_argument('localRootPath', nargs='?', default='.')
     parser.add_argument('port', nargs='?', type=int, default=8000)
     args = parser.parse_args()
-    localpath = normalizePath(args.localpath)
+    localRootPath = normalizePath(args.localRootPath)
     localip = get_host_ip()
     port = args.port
 
