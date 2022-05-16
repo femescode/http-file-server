@@ -90,10 +90,13 @@ def humansize(size):
         return "%dB" % size
 
 def is_text(size, path):
-    if size <= 2097152 and re.search('\.(txt|csv|log|sh|properties|conf|cfg|md)$', path, re.I):
+    if size <= 2097152 and re.search('\.(txt|json|csv|log|sh|properties|conf|cfg|md)$', path, re.I):
         return True
     return False
-
+def is_html(size, path):
+    if re.search('\.(html|xml)$', path, re.I):
+        return True
+    return False
 def is_jpg(size, path):
     return re.search('\.(jpg|jpeg)$', path, re.I)
 
@@ -163,6 +166,9 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             filesize = os.path.getsize(localPath)
             if is_text(filesize, localPath):
                 self.send_header("Content-Type",'text/plain; charset=utf-8')
+                self.send_header("Content-disposition",'inline')
+            elif is_html(filesize, localPath):
+                self.send_header("Content-Type",'text/html; charset=utf-8')
                 self.send_header("Content-disposition",'inline')
             elif is_jpg(filesize, localPath):
                 self.send_header("Content-Type",'image/jpeg')
