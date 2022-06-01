@@ -197,6 +197,7 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             html_sb = []
             bathHttpPath = path
             fullHttpPath = re.sub(r'^/|/$', '', 'http://%s:%s/%s'%(localip,port,re.sub(r'^/|/$', '', path)))
+            fullHttpDirPath = re.sub(r'^/|/$', '', 'http://%s/%s'%(self.headers['Host'],re.sub(r'^/|/$', '', path)))
             html_sb.append('''<html><head>
                         <base href="%s">
                         <meta http-equiv="Expires" content="0">
@@ -224,10 +225,13 @@ class HTTPRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                 deletehtml='<a href="javascript:deleteFunc(\'{}\')" class="delete">×</a>'.format(filename)
                 if os.path.isdir(filepath):
                     filename += os.sep
+                    fileHttpPath = fullHttpDirPath+'/'+filename
+                else:
+                    fileHttpPath = fullHttpPath+'/'+filename
                 mtime = os.path.getmtime(filepath)
                 filetime = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(mtime))
                 filesize = os.path.getsize(filepath)
-                html_sb.append('<li><div class="one">{}</div><div class="two">{}</div>{}<a href="{}">{}</a></li>'.format(filetime,humansize(filesize),deletehtml,fullHttpPath+'/'+filename,filename))
+                html_sb.append('<li><div class="one">{}</div><div class="two">{}</div>{}<a href="{}">{}</a></li>'.format(filetime,humansize(filesize),deletehtml,fileHttpPath,filename))
             html_sb.append('</ul>')
             html_sb.append('<hr>')
             html_sb.append('</body></html>')
